@@ -58,11 +58,11 @@ func DomainSeparator(domain Domain) ([32]byte, error) {
 	}
 
 	args := abi.Arguments{
-		{Type: bytes32Type}, // typeHash
-		{Type: bytes32Type}, // nameHash
-		{Type: bytes32Type}, // versionHash
-		{Type: uint256Type}, // chainId
-		{Type: addressType}, // verifyingContract
+		abi.Argument{Type: bytes32Type}, // typeHash
+		abi.Argument{Type: bytes32Type}, // nameHash
+		abi.Argument{Type: bytes32Type}, // versionHash
+		abi.Argument{Type: uint256Type}, // chainId
+		abi.Argument{Type: addressType}, // verifyingContract
 	}
 
 	encoded, err := args.Pack(
@@ -117,14 +117,14 @@ func intentStructHash(intent *core.Intent) ([32]byte, error) {
 	}
 
 	args := abi.Arguments{
-		{Type: bytes32Type}, // typeHash
-		{Type: addressType}, // sender
-		{Type: addressType}, // tokenIn
-		{Type: addressType}, // tokenOut
-		{Type: uint256Type}, // amountIn
-		{Type: uint256Type}, // minAmountOut
-		{Type: uint256Type}, // deadline (Unix timestamp)
-		{Type: uint256Type}, // nonce
+		abi.Argument{Type: bytes32Type}, // typeHash
+		abi.Argument{Type: addressType}, // sender
+		abi.Argument{Type: addressType}, // tokenIn
+		abi.Argument{Type: addressType}, // tokenOut
+		abi.Argument{Type: uint256Type}, // amountIn
+		abi.Argument{Type: uint256Type}, // minAmountOut
+		abi.Argument{Type: uint256Type}, // deadline (Unix timestamp)
+		abi.Argument{Type: uint256Type}, // nonce
 	}
 
 	encoded, err := args.Pack(
