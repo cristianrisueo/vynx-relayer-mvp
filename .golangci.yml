@@ -1,0 +1,40 @@
+run:
+  timeout: 5m
+
+linters:
+  disable-all: true
+  enable:
+    - errcheck
+    - gosec
+    - govet
+    - staticcheck
+    - gofmt
+
+linters-settings:
+  errcheck:
+    check-type-assertions: true
+    check-blank: false
+  gosec:
+    excludes:
+      - G304
+      - G115
+  govet:
+    enable-all: true
+    disable:
+      - shadow
+      - fieldalignment
+
+issues:
+  exclude-dirs:
+    - bindings
+    - vendor
+  exclude-rules:
+    - path: "^bindings/"
+      linters:
+        - errcheck
+        - gosec
+        - govet
+        - staticcheck
+        - gofmt
+  max-issues-per-linter: 0
+  max-same-issues: 0
