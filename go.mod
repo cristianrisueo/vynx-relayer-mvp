@@ -2,7 +2,10 @@ module github.com/cristianrisueo/vynx-relayer-mvp
 
 go 1.26.1
 
-require github.com/ethereum/go-ethereum v1.17.2
+require (
+	github.com/ethereum/go-ethereum v1.17.2
+	go.uber.org/zap v1.27.1
+)
 
 require (
 	github.com/Microsoft/go-winio v0.6.2 // indirect
@@ -30,6 +33,7 @@ require (
 	go.opentelemetry.io/otel v1.40.0 // indirect
 	go.opentelemetry.io/otel/metric v1.40.0 // indirect
 	go.opentelemetry.io/otel/trace v1.40.0 // indirect
+	go.uber.org/multierr v1.10.0 // indirect
 	golang.org/x/crypto v0.44.0 // indirect
 	golang.org/x/sync v0.18.0 // indirect
 	golang.org/x/sys v0.40.0 // indirect
