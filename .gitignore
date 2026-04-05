@@ -1,0 +1,10 @@
+
+# Dotenv file
+.env
+
+# Claude
+.claude/
+CLAUDE.md
+
+# Spec files
+vynx_relayer_spec.md

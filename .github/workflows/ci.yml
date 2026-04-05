@@ -1,0 +1,40 @@
+name: VynX Relayer CI
+
+# Triggers the workflow on push or pull request events for specific branches
+on:
+  push:
+    branches: ["master", "main"]
+  pull_request:
+    branches: ["master", "main"]
+
+jobs:
+  build-and-test:
+    # Defines the runner environment (latest Ubuntu)
+    runs-on: ubuntu-latest
+    steps:
+      # Step 1: Checks out the current repository so the workflow can access it
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # Step 2: Sets up the Go environment with a specific version and caching enabled to speed up builds
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.1"
+          cache: true
+
+      # Step 3: Downloads and installs golangci-lint, the industry standard for Go static analysis
+      - name: Install golangci-lint
+        run: curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.56.2
+
+      # Step 4: Ensures code adheres to standard formatting and runs the linter suite
+      - name: Check Formatting & Linting
+        run: |
+          go fmt ./...
+          golangci-lint run ./...
+
+      # Step 5: Executes all tests with the Go Race Detector enabled.
+      # This is critical for catching concurrent memory access bugs (Data Races).
+      - name: Run Tests with Race Detector
+        # Fails the build if any test fails or if a data race is detected
+        run: go test -race -v ./...
