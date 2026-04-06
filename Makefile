@@ -6,7 +6,7 @@ BINDINGS_PKG  := bindings
 BINDINGS_TYPE := VynxSettlement
 GOPATH_BIN    := $(shell go env GOPATH)/bin
 
-.PHONY: all build test lint bindings tidy clean
+.PHONY: all build test lint bindings tidy simulate clean
 
 all: tidy bindings build
 
