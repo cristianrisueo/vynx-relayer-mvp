@@ -21,19 +21,11 @@ import (
 // contract binding. *bindings.VynxSettlement satisfies it; stubs can be injected
 // in tests without a live RPC node.
 type settlementCaller interface {
-	Settle(
+	ClaimFunds(
 		opts *bind.TransactOpts,
 		intentId [32]byte,
-		sender common.Address,
-		tokenIn common.Address,
-		tokenOut common.Address,
-		amountIn *big.Int,
-		minAmountOut *big.Int,
-		deadline *big.Int,
-		nonce *big.Int,
-		winningSolver common.Address,
-		amountOut *big.Int,
-		relayerSig []byte,
+		solver common.Address,
+		relayerSignature []byte,
 	) (*types.Transaction, error)
 }
 
@@ -57,7 +49,6 @@ type Executor struct {
 	vault      *signer.KeyVault
 	nonceQueue *NonceQueue
 	opClient   gasTipCapper // *OPStackClient in production
-	eipDomain  signer.Domain
 	chainID    *big.Int
 	logger     *zap.Logger
 }
@@ -71,7 +62,6 @@ func NewExecutor(
 	vault *signer.KeyVault,
 	nonceQueue *NonceQueue,
 	opClient gasTipCapper,
-	eipDomain signer.Domain,
 	chainID *big.Int,
 	logger *zap.Logger,
 ) *Executor {
@@ -80,14 +70,13 @@ func NewExecutor(
 		vault:      vault,
 		nonceQueue: nonceQueue,
 		opClient:   opClient,
-		eipDomain:  eipDomain,
 		chainID:    chainID,
 		logger:     logger,
 	}
 }
 
 // Run is the Executor's main event loop. It blocks until ctx is cancelled or
-// voucherCh is closed, consuming each Voucher and dispatching a settle() call
+// voucherCh is closed, consuming each Voucher and dispatching a claimFunds() call
 // to the L2 contract.
 //
 // On failure, the IntentID is pushed to txFailedCh (non-blocking) so the
@@ -123,23 +112,35 @@ func (e *Executor) Run(ctx context.Context, voucherCh <-chan *core.Voucher, txFa
 	}
 }
 
-// execute signs the EIP-712 intent digest and submits the settle() transaction
+// execute signs the EIP-191 claim digest and submits the claimFunds() transaction
 // to the L2 contract for a single Voucher. On nonce-desync errors it resyncs
 // the NonceQueue so the next execution attempt uses the authoritative nonce.
 func (e *Executor) execute(ctx context.Context, v *core.Voucher) error {
-	// ── Step 1: EIP-712 sign ───────────────────────────────────────────────
-	digest, err := signer.HashIntent(e.eipDomain, v.Intent)
-	if err != nil {
-		return fmt.Errorf("failed to hash intent %s for signing: %w", v.IntentID, err)
-	}
-	sig, err := e.vault.Sign(digest)
-	if err != nil {
-		return fmt.Errorf("failed to sign digest for intent %s: %w", v.IntentID, err)
-	}
-
-	// ── Step 2: Encode intentID as bytes32 ────────────────────────────────
+	// ── Step 1: Encode intentID as bytes32 ────────────────────────────────
 	var intentIDBytes [32]byte
 	copy(intentIDBytes[:], []byte(v.Intent.ID))
+
+	// ── Step 2: EIP-191 sign (intentId || solver) ─────────────────────────
+	// Matches the Solidity verification in VynxSettlement.claimFunds():
+	//   MessageHashUtils.toEthSignedMessageHash(keccak256(abi.encodePacked(intentId, solver)))
+	digest := signer.ClaimDigest(intentIDBytes, v.WinningSolver)
+	sig, err := e.vault.Sign(digest)
+	if err != nil {
+		return fmt.Errorf("failed to sign claim digest for intent %s: %w", v.IntentID, err)
+	}
+	// Go's crypto.Sign produces V in {0, 1}. Solidity's ecrecover (used by
+	// OpenZeppelin ECDSA v5) expects V in {27, 28}. Normalize here rather
+	// than in KeyVault, which is also used for transaction signing where V=0/1
+	// is correct (go-ethereum's WithSignature handles that case internally).
+	if sig[64] < 27 {
+		sig[64] += 27
+	}
+
+	e.logger.Debug("claim signature produced",
+		zap.String("intent_id", string(v.IntentID)),
+		zap.String("solver", v.WinningSolver.Hex()),
+		zap.String("relayer", e.vault.Address().Hex()),
+	)
 
 	// ── Step 3: Fetch gas tip cap from OP Stack node ───────────────────────
 	tip, err := e.opClient.SuggestGasTipCap(ctx)
@@ -151,8 +152,6 @@ func (e *Executor) execute(ctx context.Context, v *core.Voucher) error {
 	nonce := e.nonceQueue.Next()
 
 	// ── Step 5: Build TransactOpts with KeyVault signer closure ───────────
-	// KeyVault.Sign is used inside a bind.SignerFn to keep the raw private key
-	// confined to key_vault.go throughout the transaction signing lifecycle.
 	vaultAddr := e.vault.Address()
 	chainID := e.chainID
 
@@ -160,9 +159,7 @@ func (e *Executor) execute(ctx context.Context, v *core.Voucher) error {
 		From:      vaultAddr,
 		Nonce:     new(big.Int).SetUint64(nonce),
 		GasTipCap: tip,
-		// GasFeeCap: nil → bind package fetches baseFee and computes 2×baseFee+tip.
-		// GasLimit:  0   → bind package calls EstimateGas automatically.
-		Context: ctx,
+		Context:   ctx,
 		Signer: func(addr common.Address, tx *types.Transaction) (*types.Transaction, error) {
 			if addr != vaultAddr {
 				return nil, fmt.Errorf("signer address mismatch: got %s, want %s",
@@ -179,25 +176,15 @@ func (e *Executor) execute(ctx context.Context, v *core.Voucher) error {
 		},
 	}
 
-	// ── Step 6: Call settle() on the VynxSettlement contract ──────────────
-	_, txErr := e.settlement.Settle(
+	// ── Step 6: Call claimFunds() on the VynxSettlement contract ──────────
+	_, txErr := e.settlement.ClaimFunds(
 		auth,
 		intentIDBytes,
-		v.Intent.Sender,
-		v.Intent.TokenIn,
-		v.Intent.TokenOut,
-		v.Intent.AmountIn,
-		v.Intent.MinAmountOut,
-		big.NewInt(v.Intent.Deadline.Unix()),
-		new(big.Int).SetUint64(v.Intent.Nonce),
 		v.WinningSolver,
-		v.AmountOut,
 		sig,
 	)
 	if txErr != nil {
 		if isNonceError(txErr) {
-			// Nonce desync: re-anchor the counter from the node before returning.
-			// The next execute() call will use the authoritative pending nonce.
 			e.logger.Warn("nonce desync detected — resyncing NonceQueue",
 				zap.String("intent_id", string(v.IntentID)),
 				zap.Uint64("skipped_nonce", nonce),
@@ -210,15 +197,13 @@ func (e *Executor) execute(ctx context.Context, v *core.Voucher) error {
 				)
 			}
 		} else {
-			// Non-nonce error (gas, revert, etc.): the reserved nonce is now a gap
-			// in the sequence. Log at Warn so on-call can diagnose mempool stalls.
 			e.logger.Warn("settlement failed — nonce gap introduced",
 				zap.String("intent_id", string(v.IntentID)),
 				zap.Uint64("skipped_nonce", nonce),
 				zap.Error(txErr),
 			)
 		}
-		return fmt.Errorf("failed to settle intent %s: %w", v.IntentID, txErr)
+		return fmt.Errorf("failed to claim funds for intent %s: %w", v.IntentID, txErr)
 	}
 
 	e.logger.Info("settlement submitted",

@@ -24,18 +24,10 @@ import (
 // stubSettlement implements settlementCaller. All calls return err (may be nil).
 type stubSettlement struct{ err error }
 
-func (s *stubSettlement) Settle(
+func (s *stubSettlement) ClaimFunds(
 	_ *bind.TransactOpts,
 	_ [32]byte,
 	_ common.Address,
-	_ common.Address,
-	_ common.Address,
-	_ *big.Int,
-	_ *big.Int,
-	_ *big.Int,
-	_ *big.Int,
-	_ common.Address,
-	_ *big.Int,
 	_ []byte,
 ) (*types.Transaction, error) {
 	return nil, s.err
@@ -75,7 +67,6 @@ func newTestExecutor(settlement settlementCaller, gas gasTipCapper) *Executor {
 		vault,
 		q,
 		gas,
-		signer.Domain{Name: "VynX", Version: "1", ChainID: 31337},
 		big.NewInt(31337),
 		zap.NewNop(),
 	)
@@ -105,13 +96,11 @@ func newTestVoucher(id string) *core.Voucher {
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
-// TestExecutor_Run_RoutesFailureToTxFailedCh verifies that when execute() fails
-// (settlement stub returns an error), Run() pushes the IntentID to txFailedCh.
 func TestExecutor_Run_RoutesFailureToTxFailedCh(t *testing.T) {
 	t.Parallel()
 
 	settlement := &stubSettlement{err: fmt.Errorf("settlement reverted: slippage exceeded")}
-	gas := &stubGasTipper{tip: big.NewInt(1_000_000_000)} // 1 gwei, no error
+	gas := &stubGasTipper{tip: big.NewInt(1_000_000_000)}
 	ex := newTestExecutor(settlement, gas)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -135,9 +124,6 @@ func TestExecutor_Run_RoutesFailureToTxFailedCh(t *testing.T) {
 	}
 }
 
-// TestExecutor_Run_TxFailedCh_NonBlocking verifies that a full (zero-capacity)
-// txFailedCh does NOT deadlock Run(). The executor must use the non-blocking
-// select/default pattern and continue processing subsequent vouchers.
 func TestExecutor_Run_TxFailedCh_NonBlocking(t *testing.T) {
 	t.Parallel()
 
@@ -149,25 +135,18 @@ func TestExecutor_Run_TxFailedCh_NonBlocking(t *testing.T) {
 	defer cancel()
 
 	voucherCh := make(chan *core.Voucher, 5)
-	// txFailedCh has zero capacity — every send from Run() will hit the default branch.
 	txFailedCh := make(chan core.IntentID)
 
 	go ex.Run(ctx, voucherCh, txFailedCh)
 
-	// Push 3 vouchers. If Run() were to block on txFailedCh, the test would deadlock.
 	for i := range 3 {
 		voucherCh <- newTestVoucher(fmt.Sprintf("nonblocking-%d", i))
 	}
 
-	// Allow the executor to drain the queue, then cancel.
 	time.Sleep(200 * time.Millisecond)
 	cancel()
-
-	// If we reach here without hanging, the non-blocking guarantee holds.
 }
 
-// TestExecutor_Run_CtxCancel verifies that Run() exits within a bounded time
-// when the context is cancelled, even with an empty voucher channel.
 func TestExecutor_Run_CtxCancel(t *testing.T) {
 	t.Parallel()
 
@@ -191,14 +170,11 @@ func TestExecutor_Run_CtxCancel(t *testing.T) {
 
 	select {
 	case <-done:
-		// Run() exited cleanly after ctx cancel.
 	case <-time.After(500 * time.Millisecond):
 		t.Fatal("Run() did not exit within 500ms after ctx cancel")
 	}
 }
 
-// TestExecutor_Run_ClosedVoucherCh verifies that Run() exits when voucherCh is
-// closed, independent of context cancellation.
 func TestExecutor_Run_ClosedVoucherCh(t *testing.T) {
 	t.Parallel()
 
@@ -220,15 +196,11 @@ func TestExecutor_Run_ClosedVoucherCh(t *testing.T) {
 
 	select {
 	case <-done:
-		// Run() exited after channel close.
 	case <-time.After(500 * time.Millisecond):
 		t.Fatal("Run() did not exit within 500ms after voucherCh closed")
 	}
 }
 
-// TestExecutor_Run_Concurrent_NoDataRace is the primary concurrency stress test.
-// 50 goroutines inject vouchers simultaneously; the race detector must report
-// zero data races across all shared state (NonceQueue, logger, stubs).
 func TestExecutor_Run_Concurrent_NoDataRace(t *testing.T) {
 	t.Parallel()
 
@@ -257,9 +229,6 @@ func TestExecutor_Run_Concurrent_NoDataRace(t *testing.T) {
 	}
 
 	wg.Wait()
-
-	// Allow the executor to process all vouchers, then shut down.
-	// Each voucher cycles through execute() and optionally pushes to txFailedCh.
 	time.Sleep(500 * time.Millisecond)
 	cancel()
 }

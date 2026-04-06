@@ -33,7 +33,7 @@ import (
 	"github.com/cristianrisueo/vynx-relayer-mvp/internal/auction"
 	"github.com/cristianrisueo/vynx-relayer-mvp/internal/core"
 	"github.com/cristianrisueo/vynx-relayer-mvp/internal/ingress"
-	internalsigner "github.com/cristianrisueo/vynx-relayer-mvp/internal/signer"
+	"github.com/cristianrisueo/vynx-relayer-mvp/internal/signer"
 	"github.com/cristianrisueo/vynx-relayer-mvp/internal/txmanager"
 )
 
@@ -77,7 +77,7 @@ func main() {
 	}
 
 	// ── 3. ECDSA Key Vault ─────────────────────────────────────────────────────
-	vault, err := internalsigner.NewKeyVaultFromHex(privateKeyHex)
+	vault, err := signer.NewKeyVaultFromHex(privateKeyHex)
 	if err != nil {
 		logger.Fatal("failed to initialise key vault", zap.Error(err))
 	}
@@ -113,13 +113,6 @@ func main() {
 		logger.Fatal("failed to bind VynxSettlement contract", zap.Error(err))
 	}
 
-	eipDomain := internalsigner.Domain{
-		Name:              "VynX",
-		Version:           "1",
-		ChainID:           chainIDUint,
-		VerifyingContract: settlementAddr,
-	}
-
 	// ── 7. Event Bus channels ──────────────────────────────────────────────────
 	const (
 		intentBuf = 256
@@ -141,7 +134,6 @@ func main() {
 		vault,
 		nonceQueue,
 		opClient,
-		eipDomain,
 		new(big.Int).SetUint64(chainIDUint),
 		logger,
 	)
