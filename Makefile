@@ -35,6 +35,10 @@ bindings:
 tidy:
 	go mod tidy
 
+## simulate: Run the live E2E simulation against a running Anvil node and relayer
+simulate:
+	go run ./cmd/simulate/...
+
 ## clean: Remove compiled binaries
 clean:
 	rm -rf bin/
