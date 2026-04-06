@@ -1,3 +1,10 @@
+// Package signer handles ECDSA key management and EIP-712 signing.
+// The private key is loaded once at startup, stored only as *ecdsa.PrivateKey,
+// and the raw hex bytes are zeroed immediately after parsing.
+//
+// EIP-712 type hashes are computed at package init from the canonical Solidity
+// type strings. They are effectively immutable and safe for concurrent reads —
+// no synchronisation primitive is needed for these variables.
 package signer
 
 import (
@@ -102,6 +109,8 @@ func HashIntent(domain Domain, intent *core.Intent) ([32]byte, error) {
 }
 
 // intentStructHash ABI-encodes and hashes a single Intent struct per EIP-712.
+// Field ordering must exactly match the Solidity type string in intentTypeString —
+// any reordering produces a different hash and breaks on-chain signature verification.
 func intentStructHash(intent *core.Intent) ([32]byte, error) {
 	bytes32Type, err := abi.NewType("bytes32", "", nil)
 	if err != nil {

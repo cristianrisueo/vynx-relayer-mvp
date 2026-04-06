@@ -1,3 +1,11 @@
+// Package txmanager handles the L2 execution slice: nonce management, OP Stack gas
+// estimation, and on-chain settlement via the VynxSettlement contract.
+//
+// OP Stack gas context: every transaction on Base L2 incurs two independent fees —
+// an L2 execution fee (standard EVM gas × base+tip) and an L1 data fee charged by
+// the sequencer based on compressed calldata size. Standard go-ethereum EstimateGas
+// accounts only for the L2 component; OPStackClient adds the L1 data fee via the
+// canonical GasPriceOracle precompile at 0x420...000F.
 package txmanager
 
 import (

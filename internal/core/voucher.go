@@ -1,3 +1,7 @@
+// Package core defines the domain types shared across all VynX Relayer slices.
+// No logic lives here — only plain data structures and named ID types.
+// Keeping types in a leaf package with zero internal imports is the mechanism
+// that allows the Event Bus pattern in main.go to wire slices without cycles.
 package core
 
 import (
