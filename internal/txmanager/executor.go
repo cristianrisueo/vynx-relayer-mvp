@@ -11,11 +11,38 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/ethclient"
 
-	"github.com/cristianrisueo/vynx-relayer-mvp/bindings"
 	"github.com/cristianrisueo/vynx-relayer-mvp/internal/core"
 	"github.com/cristianrisueo/vynx-relayer-mvp/internal/signer"
 )
+
+// settlementCaller is the minimal interface required from the VynxSettlement
+// contract binding. *bindings.VynxSettlement satisfies it; stubs can be injected
+// in tests without a live RPC node.
+type settlementCaller interface {
+	Settle(
+		opts *bind.TransactOpts,
+		intentId [32]byte,
+		sender common.Address,
+		tokenIn common.Address,
+		tokenOut common.Address,
+		amountIn *big.Int,
+		minAmountOut *big.Int,
+		deadline *big.Int,
+		nonce *big.Int,
+		winningSolver common.Address,
+		amountOut *big.Int,
+		relayerSig []byte,
+	) (*types.Transaction, error)
+}
+
+// gasTipCapper is the minimal interface required from OPStackClient.
+// *OPStackClient satisfies it; stubs can be injected in tests.
+type gasTipCapper interface {
+	SuggestGasTipCap(ctx context.Context) (*big.Int, error)
+	Client() *ethclient.Client
+}
 
 // Executor is the sole consumer of the auction voucher channel and the sole writer
 // to the VynxSettlement contract on Base L2. It bridges the off-chain OFA engine
@@ -26,21 +53,24 @@ import (
 // of internal/auction — communication is via channels wired in cmd/relayer/main.go
 // (the Event Bus pattern mandated by the spec).
 type Executor struct {
-	settlement *bindings.VynxSettlement
+	settlement settlementCaller // *bindings.VynxSettlement in production
 	vault      *signer.KeyVault
 	nonceQueue *NonceQueue
-	opClient   *OPStackClient
+	opClient   gasTipCapper // *OPStackClient in production
 	eipDomain  signer.Domain
 	chainID    *big.Int
 	logger     *zap.Logger
 }
 
 // NewExecutor constructs an Executor with all L2 execution dependencies injected.
+// settlement must be a *bindings.VynxSettlement; opClient must be a *OPStackClient.
+// Both types satisfy the package-private interfaces, so no cast is needed at the
+// call site. Using interfaces here enables stub injection in tests.
 func NewExecutor(
-	settlement *bindings.VynxSettlement,
+	settlement settlementCaller,
 	vault *signer.KeyVault,
 	nonceQueue *NonceQueue,
-	opClient *OPStackClient,
+	opClient gasTipCapper,
 	eipDomain signer.Domain,
 	chainID *big.Int,
 	logger *zap.Logger,
