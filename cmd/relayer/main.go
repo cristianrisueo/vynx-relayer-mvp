@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -39,7 +40,10 @@ import (
 
 func main() {
 	// ── 1. Logger (must come first — everything else logs through it) ──────────
-	logger, err := zap.NewProduction()
+	cfg := zap.NewDevelopmentConfig()
+	cfg.EncoderConfig.EncodeLevel = zapcore.CapitalColorLevelEncoder
+	cfg.Level = zap.NewAtomicLevelAt(zap.InfoLevel)
+	logger, err := cfg.Build()
 	if err != nil {
 		panic(fmt.Sprintf("failed to build zap logger: %v", err))
 	}
