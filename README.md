@@ -18,6 +18,10 @@ The VynX Relayer receives user swap intents over HTTP, runs a real-time auction 
 
 ## Quick Start
 
+> **Grant reviewer?** The complete settlement stack — Relayer + TypeScript agent +
+> CDP MPC wallet + Mock Solver — runs with a single command from the monorepo root:
+> `make reviewer-demo`. The steps below describe running the Relayer in isolation.
+
 ```bash
 # Prerequisites: Go 1.21+, Anvil (Foundry), golangci-lint
 
@@ -56,9 +60,14 @@ make simulate
 POST /v1/intent ──> intentCh ──> Auction Engine ──> voucherCh ──> Executor ──> VynxSettlement (Base L2)
                                       ^
 WS /v1/ws/solvers ──> bidCh ─────────┘
+       ^
+       │ (Mock Solver in scripts/run_workflow.ts submits a bid after 2 s to close the demo loop)
 ```
 
 All channels are wired in `cmd/relayer/main.go`. Packages `internal/auction`, `internal/txmanager`, and `internal/ingress` have zero circular imports -- the Event Bus pattern enforces this at compile time.
+
+The auction window is configured via `AUCTION_TIMEOUT_MS` (default `200`; set to `4000` in
+`docker-compose.yml` to accommodate the Mock Solver's simulated computation delay).
 
 ---
 
